@@ -47,8 +47,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: p-${{ inputs.b }}
       - run: pip install -q boto3
       - run: |
+          echo "t0=$(date +%s)" >> $GITHUB_ENV
           python3 - <<'EOF'
           import boto3, os, tarfile
           s = boto3.client("s3", endpoint_url=f"https://{os.environ['S3_A']}.r2.cloudflarestorage.com",
@@ -58,7 +63,11 @@ jobs:
           EOF
         env:
           B: ${{ inputs.b }}
-      - run: cd w && pip install -q -r req.txt && bash job.sh "${{ matrix.i }}" "${{ inputs.t }}" > ../o.log 2>&1 || echo "rc=$?" >> ../o.log
+      - run: |
+          echo "[t+$(( $(date +%s) - t0 ))s] bundle ready" > o.log
+          cd w && pip install -q -r req.txt && echo "[t+$(( $(date +%s) - t0 ))s] deps installed" >> ../o.log
+          bash job.sh "${{ matrix.i }}" "${{ inputs.t }}" >> ../o.log 2>&1 || echo "rc=$?" >> ../o.log
+          echo "[t+$(( $(date +%s) - t0 ))s] leg finished" >> ../o.log
       - if: always()
         run: |
           python3 - <<'EOF'
