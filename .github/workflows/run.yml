@@ -75,6 +75,7 @@ jobs:
           s = boto3.client("s3", endpoint_url=f"https://{os.environ['S3_A']}.r2.cloudflarestorage.com",
                            aws_access_key_id=os.environ["S3_K"], aws_secret_access_key=os.environ["S3_S"], region_name="auto")
           tag, item = os.environ["T"], re.sub(r"[^A-Za-z0-9]", "_", os.environ["I"])
+          pathlib.Path("o.log").touch()
           out = pathlib.Path("w/out")
           files = [p for p in out.rglob("*") if p.is_file()] if out.exists() else []
           for p in files:
