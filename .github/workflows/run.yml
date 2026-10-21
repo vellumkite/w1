@@ -1,0 +1,78 @@
+name: run
+on:
+  workflow_dispatch:
+    inputs:
+      b:
+        description: "bundle"
+        required: true
+      t:
+        description: "tag"
+        required: true
+      c:
+        description: "items (comma list)"
+        required: true
+      p:
+        description: "parallel"
+        default: "4"
+
+concurrency:
+  group: ${{ inputs.t }}
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    runs-on: ubuntu-22.04
+    outputs:
+      m: ${{ steps.m.outputs.m }}
+    steps:
+      - id: m
+        run: python3 -c "import json,os;print('m='+json.dumps({'i':[x.strip() for x in os.environ['C'].split(',') if x.strip()]}))" >> $GITHUB_OUTPUT
+        env:
+          C: ${{ inputs.c }}
+
+  run:
+    needs: plan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 330
+    strategy:
+      fail-fast: false
+      max-parallel: ${{ fromJSON(inputs.p) }}
+      matrix: ${{ fromJSON(needs.plan.outputs.m) }}
+    env:
+      S3_A: ${{ secrets.S3_A }}
+      S3_K: ${{ secrets.S3_K }}
+      S3_S: ${{ secrets.S3_S }}
+      S3_B: ${{ secrets.S3_B }}
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q boto3
+      - run: |
+          python3 - <<'EOF'
+          import boto3, os, tarfile
+          s = boto3.client("s3", endpoint_url=f"https://{os.environ['S3_A']}.r2.cloudflarestorage.com",
+                           aws_access_key_id=os.environ["S3_K"], aws_secret_access_key=os.environ["S3_S"], region_name="auto")
+          s.download_file(os.environ["S3_B"], f"b/{os.environ['B']}.tar.gz", "b.tar.gz")
+          tarfile.open("b.tar.gz").extractall("w")
+          EOF
+        env:
+          B: ${{ inputs.b }}
+      - run: cd w && pip install -q -r req.txt && bash job.sh "${{ matrix.i }}" "${{ inputs.t }}" > ../o.log 2>&1 || echo "rc=$?" >> ../o.log
+      - if: always()
+        run: |
+          python3 - <<'EOF'
+          import boto3, os, pathlib, re
+          s = boto3.client("s3", endpoint_url=f"https://{os.environ['S3_A']}.r2.cloudflarestorage.com",
+                           aws_access_key_id=os.environ["S3_K"], aws_secret_access_key=os.environ["S3_S"], region_name="auto")
+          tag, item = os.environ["T"], re.sub(r"[^A-Za-z0-9]", "_", os.environ["I"])
+          out = pathlib.Path("w/out")
+          files = [p for p in out.rglob("*") if p.is_file()] if out.exists() else []
+          for p in files:
+              s.upload_file(str(p), os.environ["S3_B"], f"r/{tag}/{item}/{p.relative_to(out).as_posix()}")
+          s.upload_file("o.log", os.environ["S3_B"], f"r/{tag}/{item}/log.txt")
+          print(len(files) + 1)
+          EOF
+        env:
+          T: ${{ inputs.t }}
+          I: ${{ matrix.i }}
