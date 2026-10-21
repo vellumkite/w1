@@ -50,7 +50,8 @@ jobs:
       - uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: p-${{ inputs.b }}
+          key: p-${{ runner.os }}-1
+          restore-keys: p-${{ runner.os }}-
       - run: pip install -q boto3
       - run: |
           echo "t0=$(date +%s)" >> $GITHUB_ENV
